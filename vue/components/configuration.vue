@@ -1,337 +1,123 @@
 <template>
-  <div class="configuration">
-    <a-modal :visible="visible" @cancel="handleCancel()">
-      <a-form
-        id="components-form-demo-validate-other"
-        :label-col="{ span: 10 }"
-        :wrapper-col="{ span: 14 }"
-      >
-        <template v-if="type === 'server'">
-          <h3>{{ name }} Server Configuaration</h3>
-        </template>
-        <template v-if="type === 'client'">
-          <h3>{{ name }} Client Configuaration</h3>
-        </template>
-        <a-divider />
-        <!-- surasyti skirtingus configuracijos fieldus -->
-        <a-form-item label="Enable/Disable" name="enable" required>
-          <a-switch
-            name="enable"
-            @change="toggleSwitch(selectedInstance.enable)"
-            :checked="selectedInstance.enable === '1'"
+  <div class="insinstance-modal">
+    <a-modal v-if="visible" :visible="visible" @cancel="handleCancel()">
+      <vuci-form uci-config="openvpn" key=".index" @applied="handleOk()">
+        <vuci-named-section class="insinstance-modal-form" :name="instanceName" v-slot="{ s }" :card="false">
+          <template v-if="s.type === 'server'">
+            <h3>{{ s['.name'] }} Server Configuaration</h3>
+          </template>
+          <template v-if="s.type === 'client'">
+            <h3>{{ s['.name'] }} Client Configuaration</h3>
+          </template>
+          <a-checkbox :checked="advancedCheck" @change="advancedCheck = !advancedCheck"> Advanced </a-checkbox>
+          <a-divider />
+          <vuci-form-item-switch label="Enable/Disable" name="enable" :uci-section="s" required />
+          <vuci-form-item-select label="Authentication Type" v-model="s['_auth']" name="_auth" :uci-section="s" :options="auth" required />
+          <vuci-form-item-input label="Remote host/IP address" :uci-section="s" name="remote" depend="_auth === 'skey'" />
+          <vuci-form-item-input label="Local tunnel endpoint IP" :uci-section="s" name="local_ip" depend="_auth === 'skey'" rules="ip4addr" />
+          <vuci-form-item-input label="Remote tunnel endpoint IP" :uci-section="s" name="remote_ip" depend="_auth === 'skey'" rules="ip4addr" />
+          <vuci-form-item-input
+            label="Remote network IP address"
+            :uci-section="s"
+            name="network_ip"
+            depend="_auth === 'skey'"
+            :rules="'ip4addr'"
+            :help="instance.network_ip === router_lan ? 'remote IP same as roter IP' : ''"
+            @change="instance.network_ip = $event.model"
           />
-        </a-form-item>
-        <a-form-item label="Authentication Type" required>
-          <a-select v-model="selectedInstance['_auth']">
-            <a-select-option value="skey" default>Static Key</a-select-option>
-            <a-select-option value="tls">TLS</a-select-option>
-          </a-select>
-        </a-form-item>
+          <vuci-form-item-input label="Remote network netmask" :uci-section="s" name="network_mask" depend="_auth === 'skey'" rules="netmask4" />
+          <vuci-form-item :uci-section="s" name="" label="Static key upload" depend="_auth === 'skey'">
+            <a-upload
+              @change="onFileUpload($event, 'secret')"
+              action="/upload"
+              :data="{
+                path: '/etc/vuci-upload/openvpn/' + s['.name'] + '.secretstatic.key'
+              }"
+              ><a-button :disabled="disableUpload" type="primary" icon="upload" @click="tempFileLocation = '/etc/vuci-upload/openvpn/' + s['.name'] + '.secretstatic.key'">Select File</a-button>
+            </a-upload>
+            <div :uci-section="s">
+              {{ s.secret ? s.secret.split('/').slice(4, 5).join('/') : '' }}
+            </div>
+          </vuci-form-item>
+          <div v-if="s.type === 'client'">
+            <vuci-form-item-input label="Remote host/IP address" :uci-section="s" name="remote" depend="_auth === 'tls'" />
+            <vuci-form-item-input label="Remote network IP address" :uci-section="s" name="network_ip" depend="_auth === 'tls'" rules="ip4addr" />
+            <vuci-form-item-input label="Remote network netmask" :uci-section="s" name="network_mask" depend="_auth === 'tls'" rules="ip4addr" />
+          </div>
+          <div v-if="s.type === 'server'">
+            <vuci-form-item-input label="Virtual network IP address" :uci-section="s" name="server_ip" depend="_auth === 'tls'" rules="ip4addr" />
+            <vuci-form-item-input label="Virtual network netmask" :uci-section="s" name="server_netmask" depend="_auth === 'tls'" rules="ip4addr" />
+          </div>
+          <vuci-form-item :uci-section="s" name="" label="Authority certificate upload" depend="_auth === 'tls'">
+            <a-upload
+              @change="onFileUpload($event, 'ca')"
+              action="/upload"
+              :data="{
+                path: '/etc/vuci-upload/openvpn/' + s['.name'] + '.auth_cert'
+              }"
+              ><a-button :disabled="disableUpload" type="primary" icon="upload" @click="tempFileLocation = '/etc/vuci-upload/openvpn/' + s['.name'] + '.auth_cert'">Select File</a-button>
+            </a-upload>
+            <div :uci-section="s">
+              {{ s.ca ? s.ca.split('/').slice(4, 5).join('/') : '' }}
+            </div>
+          </vuci-form-item>
 
-        <template v-if="selectedInstance['_auth'] === 'skey'">
-          <a-form-item label="Remote host/IP address" v-if="type === 'client'">
-            <a-input v-model="selectedInstance.remote" />
-          </a-form-item>
-          <a-form-item
-            label="Local tunnel endpoint IP"
-            :validate-status="validations.localIpError"
-            :help="
-              validations.localIpError === 'success'
-                ? ''
-                : 'Please input a valid IP'
-            "
-          >
-            <a-input
-              v-model="selectedInstance.local_ip"
-              @blur="validateIp(selectedInstance.local_ip, 'local_ip')"
-            />
-          </a-form-item>
-          <a-form-item
-            label="Remote tunnel endpoint IP"
-            :validate-status="validations.remoteIpError"
-            :help="
-              validations.remoteIpError === 'success'
-                ? ''
-                : 'Please input a valid IP'
-            "
-          >
-            <a-input
-              v-model="selectedInstance.remote_ip"
-              @blur="validateIp(selectedInstance.remote_ip, 'remote_ip')"
-            />
-          </a-form-item>
-          <a-form-item
-            label="Remote network IP address"
-            :validate-status="validations.networkIpError"
-            :help="
-              validations.networkIpError === 'success'
-                ? ''
-                : 'Please input a valid IP and not LAN IP'
-            "
-          >
-            <a-input
-              v-model="selectedInstance.network_ip"
-              @blur="validateIp(selectedInstance.network_ip, 'network_ip')"
-            />
-          </a-form-item>
-          <a-form-item
-            label="Remote network netmask"
-            :validate-status="validations.networkMaskError"
-            :help="
-              validations.networkMaskError === 'success'
-                ? ''
-                : 'Please input a valid netmask'
-            "
-          >
-            <a-input
-              v-model="selectedInstance.network_mask"
-              @blur="
-                validateMask(selectedInstance.network_mask, 'network_mask')
-              "
-            />
-          </a-form-item>
-          <a-form-item label="Static key upload">
+          <vuci-form-item :uci-section="s" name="" :label="s.type === 'server' ? 'Server certificate upload' : 'Client certificate upload'" depend="_auth === 'tls'">
             <a-upload
-              @change="onUploadServerStatic"
+              @change="onFileUpload($event, 'cert')"
               action="/upload"
               :data="{
-                path:
-                  '/etc/vuci-upload/openvpn/' +
-                  selectedInstance['.name'] +
-                  '.secretstatic.key'
+                path: '/etc/vuci-upload/openvpn/' + s['.name'] + '.auth'
               }"
-            >
-              <a-button
-                :disabled="disableUpload"
-                type="primary"
-                icon="upload"
-                @click="
-                  tempFileLocation =
-                    '/etc/vuci-upload/openvpn/' +
-                    selectedInstance['.name'] +
-                    '.secretstatic.key'
-                "
-                >Select File</a-button
-              ><span v-if="selectedInstance.secret != ''">{{
-                selectedInstance.secret.split('/').slice(4, 5).join('/')
-              }}</span>
-              <span v-if="selectedInstance.secret === ''"> Not uploaded </span>
+              ><a-button :disabled="disableUpload" type="primary" icon="upload" @click="tempFileLocation = '/etc/vuci-upload/openvpn/' + s['.name'] + '.auth'">Select File</a-button>
             </a-upload>
-          </a-form-item>
-        </template>
-        <template v-if="selectedInstance['_auth'] === 'tls'">
-          <a-form-item
-            label="Virtual network IP address"
-            :validate-status="validations.virtualIpError"
-            :help="
-              validations.virtualIpError === 'success'
-                ? ''
-                : 'Please input a valid IP'
-            "
-            v-if="type === 'server'"
-          >
-            <a-input
-              v-model="selectedInstance.server_ip"
-              @blur="validateIp(selectedInstance.server_ip, 'server_ip')"
-            />
-          </a-form-item>
-          <a-form-item
-            label="Virtual network netmask"
-            :validate-status="validations.virtualNetmaskError"
-            :help="
-              validations.virtualNetmaskError === 'success'
-                ? ''
-                : 'Please input a valid netmask'
-            "
-            v-if="type === 'server'"
-          >
-            <a-input
-              v-model="selectedInstance.server_netmask"
-              @blur="
-                validateMask(selectedInstance.server_netmask, 'server_netmask')
-              "
-            />
-          </a-form-item>
-          <a-form-item label="Remote host/IP address" v-if="type === 'client'">
-            <a-input v-model="selectedInstance.remote" />
-          </a-form-item>
-
-          <a-form-item
-            label="Remote network IP address"
-            :validate-status="validations.networkIpError"
-            :help="
-              validations.networkIpError === 'success'
-                ? ''
-                : 'Please input a valid IP and not LAN IP'
-            "
-            v-if="type === 'client'"
-          >
-            <a-input
-              v-model="selectedInstance.network_ip"
-              @blur="validateIp(selectedInstance.network_ip, 'network_ip')"
-            />
-          </a-form-item>
-          <a-form-item
-            label="Remote network netmask"
-            :validate-status="validations.networkMaskError"
-            :help="
-              validations.networkMaskError === 'success'
-                ? ''
-                : 'Please input a valid netmask'
-            "
-            v-if="type === 'client'"
-          >
-            <a-input
-              v-model="selectedInstance.network_mask"
-              @blur="
-                validateMask(selectedInstance.network_mask, 'network_mask')
-              "
-            />
-          </a-form-item>
-          <a-form-item label="Authority certificate upload">
+            <div :uci-section="s">
+              {{ s.cert ? s.cert.split('/').slice(4, 5).join('/') : '' }}
+            </div>
+          </vuci-form-item>
+          <vuci-form-item :uci-section="s" name="key" :label="s.type === 'server' ? 'Server key upload' : 'Client key upload'" depend="_auth === 'tls'">
             <a-upload
-              v-model="selectedInstance.ca"
-              @change="onUploadCertAuth"
+              @change="onFileUpload($event, 'key')"
               action="/upload"
               :data="{
-                path:
-                  '/etc/vuci-upload/openvpn/' +
-                  selectedInstance['.name'] +
-                  '.auth_cert'
+                path: '/etc/vuci-upload/openvpn/' + s['.name'] + '.key'
               }"
-            >
-              <a-button
-                :disabled="disableUpload"
-                type="primary"
-                icon="upload"
-                @click="
-                  tempFileLocation =
-                    '/etc/vuci-upload/openvpn/' +
-                    selectedInstance['.name'] +
-                    '.auth_cert'
-                "
-                >Select File</a-button
-              >
-              <span v-if="selectedInstance.ca != ''">{{
-                selectedInstance.ca.split('/').slice(4, 5).join('/')
-              }}</span>
-              <span v-if="selectedInstance.ca === ''"> Not uploaded </span>
+              ><a-button :disabled="disableUpload" type="primary" icon="upload" @click="s.key = '/etc/vuci-upload/openvpn/' + s['.name'] + '.key'">Select File</a-button>
             </a-upload>
-          </a-form-item>
-          <a-form-item
-            :label="
-              type === 'server'
-                ? 'Server certificate upload'
-                : 'Client certificate upload'
-            "
-          >
+            <div :uci-section="s">
+              {{ s.key ? s.key.split('/').slice(4, 5).join('/') : '' }}
+            </div>
+          </vuci-form-item>
+          <vuci-form-item :uci-section="s" name="dh" label="Diffie Hellman param upload" v-if="s.type === 'server'" depend="_auth === 'tls'">
             <a-upload
-              v-model="selectedInstance.cert"
-              @change="onUploadCert"
+              @change="onFileUpload($event, 'dh')"
               action="/upload"
               :data="{
-                path:
-                  '/etc/vuci-upload/openvpn/' +
-                  selectedInstance['.name'] +
-                  '.auth'
+                path: '/etc/vuci-upload/openvpn/' + s['.name'] + '.dh'
               }"
-            >
-              <a-button
-                :disabled="disableUpload"
-                type="primary"
-                icon="upload"
-                @click="
-                  tempFileLocation =
-                    '/etc/vuci-upload/openvpn/' +
-                    selectedInstance['.name'] +
-                    '.auth'
-                "
-                >Select File</a-button
-              >
-              <span v-if="selectedInstance.cert != ''">{{
-                selectedInstance.cert.split('/').slice(4, 5).join('/')
-              }}</span>
-              <span v-if="selectedInstance.cert === ''"> Not uploaded </span>
+              ><a-button :disabled="disableUpload" type="primary" icon="upload" @click="tempFileLocation = '/etc/vuci-upload/openvpn/' + s['.name'] + '.dh'">Select File</a-button>
             </a-upload>
-          </a-form-item>
-          <a-form-item
-            :label="
-              type === 'server' ? 'Server key upload' : 'Client key upload'
-            "
-          >
-            <a-upload
-              v-model="selectedInstance.key"
-              @change="onUploadKey"
-              action="/upload"
-              :data="{
-                path:
-                  '/etc/vuci-upload/openvpn/' +
-                  selectedInstance['.name'] +
-                  '.key'
-              }"
-            >
-              <a-button
-                :disabled="disableUpload"
-                type="primary"
-                icon="upload"
-                @click="
-                  tempFileLocation =
-                    '/etc/vuci-upload/openvpn/' +
-                    selectedInstance['.name'] +
-                    '.key'
-                "
-                >Select File</a-button
-              ><span v-if="selectedInstance.key != ''">{{
-                selectedInstance.key.split('/').slice(4, 5).join('/')
-              }}</span>
-              <span v-if="selectedInstance.key === ''"> Not uploaded </span>
-            </a-upload>
-          </a-form-item>
-          <a-form-item
-            label="Diffie Hellman params upload"
-            v-if="type === 'server'"
-          >
-            <a-upload
-              v-model="selectedInstance.dh"
-              @change="onUploadDH"
-              action="/upload"
-              :data="{
-                path:
-                  '/etc/vuci-upload/openvpn/' +
-                  selectedInstance['.name'] +
-                  '.dh'
-              }"
-            >
-              <a-button
-                :disabled="disableUpload"
-                type="primary"
-                icon="upload"
-                @click="
-                  tempFileLocation =
-                    '/etc/vuci-upload/openvpn/' +
-                    selectedInstance['.name'] +
-                    '.dh'
-                "
-                >Select File</a-button
-              ><span v-if="selectedInstance.dh != ''">{{
-                selectedInstance.dh.split('/').slice(4, 5).join('/')
-              }}</span>
-              <span v-if="selectedInstance.dh === ''"> Not uploaded </span>
-            </a-upload>
-          </a-form-item>
-        </template>
-      </a-form>
-      <template slot="footer">
-        <a-button key="cancel" @click="handleCancel()"> Cancel </a-button>
-        <a-button
-          key="submit"
-          type="primary"
-          @click="handleOk()"
-          :disabled="saveIsDisabled"
-        >
-          Save
-        </a-button>
-      </template>
+            <div :uci-section="s">
+              {{ s.dh ? s.dh.split('/').slice(4, 5).join('/') : '' }}
+            </div>
+          </vuci-form-item>
+          <div v-show="advancedCheck">
+            <hr />
+            <h2>Advanced</h2>
+            <vuci-form-item-input label="Keep alive" :uci-section="s" name="keepalive" />
+            <vuci-form-item-input label="Port" :uci-section="s" name="port" />
+            <vuci-form-item-checkbox label="Persist Key" :uci-section="s" name="persist_key" />
+            <vuci-form-item-checkbox label="Persist Tun" :uci-section="s" name="tun" />
+            <vuci-form-item-select label="Protocol" :uci-section="s" name="proto" :options="proto" />
+            <vuci-form-item-list label="Data ciphers" :uci-section="s" name="data_ciphers" />
+            <vuci-form-item-select label="Scipher" :uci-section="s" name="cipher" :options="encryption" />
+            <div v-if="s.type === 'server'">
+              <vuci-form-item-list label="Push Option" :uci-section="s" name="push" />
+            </div>
+          </div>
+        </vuci-named-section>
+      </vuci-form>
+      <template #footer></template>
     </a-modal>
   </div>
 </template>
@@ -341,242 +127,91 @@
 export default {
   name: 'Configuaration',
   props: {
-    type: String,
-    name: String,
     visible: Boolean,
-    selectedInstance: undefined,
-    validation: undefined
+    instanceName: String
   },
   data() {
     return {
       tempFileLocation: '',
       disableUpload: false,
-      validations: {
-        remoteIpError: 'success',
-        localIpError: 'success',
-        networkIpError: 'success',
-        networkMaskError: 'success',
-        virtualNetmaskError: 'success',
-        virtualIpError: 'success'
-      },
       router_lan: '',
-      saveIsDisabled: false
+      auth: [
+        ['skey', 'Static'],
+        ['tls', 'TLS']
+      ],
+      proto: [
+        ['udp', 'UDP'],
+        ['tcp', 'TCP'],
+        ['udp6', 'UDP6'],
+        ['tcp6', 'TCP6']
+      ],
+      encryption: [
+        ['skey', 'Static'],
+        ['tls', 'TLS']
+      ],
+      instance: {
+        network_ip: ''
+      },
+      advancedCheck: false
     }
   },
   methods: {
-    validateIp(value, name) {
-      // Validates IP and sends out error message if it's invalid
-      let isError = this.ip4addr(value)
-      if (name === 'remote_ip' && !isError && value != '') {
-        this.validations.remoteIpError = 'error'
-      } else if (name === 'remote_ip' && isError) {
-        this.validations.remoteIpError = 'success'
-      }
-      if (name === 'local_ip' && !isError && value != '') {
-        this.validations.localIpError = 'error'
-      } else if ((name === 'local_ip' && isError) || value === '') {
-        this.validations.localIpError = 'success'
-      }
-      if (
-        (name === 'network_ip' && !isError) ||
-        (value === this.router_lan && value != '')
-      ) {
-        this.validations.networkIpError = 'error'
-      } else if (
-        (name === 'network_ip' && isError) ||
-        value === '' ||
-        value != this.router_lan
-      ) {
-        this.validations.networkIpError = 'success'
-      }
+    handleOk() {
+      // If Edited function updates the values
+      if (this.instance.network_ip === this.router_lan) return this.$message.error('Please provide diffrent network IP')
+      this.deleteOldValue() //First Deletes old data and files
 
-      if (name === 'server_ip' && !isError && value != '') {
-        this.validations.virtualIpError = 'error'
-      } else if ((name === 'server_ip' && isError) || value === '') {
-        this.validations.virtualIpError = 'success'
-      }
-      this.checkValidations()
-    },
-    validateMask(value, name) {
-      // Validates Mask and sends out error message if it's invalid
-      let isError = this.ip4addr(value)
-
-      if (name === 'network_mask' && !isError && value != '') {
-        this.validations.networkMaskError = 'error'
-      } else if ((name === 'network_mask' && isError) || value === '') {
-        this.validations.networkMaskError = 'success'
-      }
-
-      if (name === 'server_netmask' && !isError && value != '') {
-        this.validations.virtualNetmaskError = 'error'
-      } else if ((name === 'server_netmask' && isError) || value === '') {
-        this.validations.virtualNetmaskError = 'success'
-      }
-      this.checkValidations()
-    },
-    //checkMask(value) {
-    //  if (
-    //    /^((128|192|224|240|248|252|254)\.0\.0\.0)|(255\.(((0|128|192|224|240|248|252|254)\.0\.0)|(255\.(((0|128|192|224|240|248|252|254)\.0)|255\.(0|128|192|224|240|248|252|254|255)))))$/.test(
-    //      value
-    //    )
-    //  )
-    //    return false
-    //  else return true
-    //},
-    checkValidations() {
-      // Check If all validations are OK, only then save button is enabled
-      let count = 0
-      for (let i = 0; i < Object.keys(this.validations).length; i++) {
-        let insideValidations = Object.keys(this.validations)[i]
-
-        if (this.validations[insideValidations] != 'success') {
-          count++
-        }
-      }
-      count === 0 ? (this.saveIsDisabled = false) : (this.saveIsDisabled = true)
-    },
-    handleCancel() {
-      for (let i = 0; i < Object.keys(this.validations).length; i++) {
-        let resetValidations = Object.keys(this.validations)[i]
-        this.validations[resetValidations] = 'success'
-      }
-      // console.log(Object.keys(this.validations)[1])
-      // console.log(Object.keys(this.validations))
-      // console.log(Object.keys(this.validations).length)
-      this.$emit('changeInstanceBack')
+      this.advancedCheck = false
       this.$emit('closeModal')
     },
-    toggleSwitch(switchValue) {
-      if (switchValue === '1') {
-        this.selectedInstance.enable = '0'
-      } else this.selectedInstance.enable = '1'
+    handleCancel() {
+      this.advancedCheck = false
+      this.$emit('closeModal')
     },
-    ip4addr(value) {
-      return !!this.parseIPv4(value)
-    },
-    parseIPv4(str) {
-      if (
-        (typeof str !== 'string' && !(str instanceof String)) ||
-        !str.match(/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/)
-      ) {
-        return undefined
-      }
-      const num = []
-      const parts = str.split(/\./)
-      for (let i = 0; i < parts.length; i++) {
-        const n = parseInt(parts[i])
-        if (isNaN(n) || n > 255) {
-          return undefined
-        }
-        num.push(n)
-      }
-      return num
+    setEncriptionOptions() {
+      this.encryption = this.$uci.get('openvpn', this.instanceName, 'data_ciphers')
     },
 
     deleteOldValue() {
-      this.$rpc
-        .call('openvpnlua', 'deleteFiles', {
-          auth: this.selectedInstance['_auth'],
-          secret: this.selectedInstance.secret,
-          ca: this.selectedInstance.ca,
-          key: this.selectedInstance.key,
-          cert: this.selectedInstance.cert,
-          dh: this.selectedInstance.dh
-        })
-        .then((r) => {
-          this.$message.success(r.message)
-        })
+      this.$uci.load('openvpn')
+      const authType = this.$uci.get('openvpn', this.instanceName, '_auth')
+      const instanceType = this.$uci.get('openvpn', this.instanceName, 'type')
+      console.log(authType)
 
+      this.$rpc.call('openvpnlua', 'deleteFiles', {
+        auth: authType,
+        name: this.instanceName
+      })
       switch (true) {
-        case this.selectedInstance.type === 'client' &&
-          this.selectedInstance['_auth'] === 'skey':
-          this.selectedInstance.ca = ''
-          this.selectedInstance.cert = ''
-          this.selectedInstance.key = ''
-          break
-        case this.selectedInstance.type === 'client' &&
-          this.selectedInstance['_auth'] === 'tls':
-          this.selectedInstance.local_ip = ''
-          this.selectedInstance.remote_ip = ''
-          this.selectedInstance.secret = ''
-          break
-        case this.selectedInstance.type === 'server' &&
-          this.selectedInstance['_auth'] === 'client':
-          this.selectedInstance.server_ip = ''
-          this.selectedInstance.server_netmask = ''
-          this.selectedInstance.ca = ''
-          this.selectedInstance.cert = ''
-          this.selectedInstance.key = ''
-          this.selectedInstance.dh = ''
-          break
-        case this.selectedInstance.type === 'server' &&
-          this.selectedInstance['_auth'] === 'tls':
-          this.selectedInstance.local_ip = ''
-          this.selectedInstance.remote_ip = ''
-          this.selectedInstance.network_ip = ''
-          this.selectedInstance.network_mask = ''
-          this.selectedInstance.secret = ''
-          break
-      }
-    },
-    handleOk() {
-      // If Edited function updates the values
-      this.deleteOldValue() //First Deletes old data and files
-
-      this.$rpc // Continous to update data values
-        .call('openvpnlua', 'editInstance', {
-          name: this.selectedInstance['_name'],
-          enable: this.selectedInstance.enable,
-          auth: this.selectedInstance['_auth'],
-          local_ip: this.selectedInstance.local_ip,
-          server_ip: this.selectedInstance.server_ip,
-          server_netmask: this.selectedInstance.server_netmask,
-          remote: this.selectedInstance.remote,
-          remote_ip: this.selectedInstance.remote_ip,
-          network_ip: this.selectedInstance.network_ip,
-          network_mask: this.selectedInstance.network_mask,
-          secret: this.selectedInstance.secret,
-          ca: this.selectedInstance.ca,
-          key: this.selectedInstance.key,
-          cert: this.selectedInstance.cert,
-          dh: this.selectedInstance.dh,
-          tls_auth: 'none'
-        })
-        .then((r) => {
-          if (r.status === 'ok') {
-            this.$message.success(r.message)
-            this.$emit('closeModal')
+        case authType === 'skey':
+          this.$uci.set('openvpn', this.instanceName, 'ca', '')
+          this.$uci.set('openvpn', this.instanceName, 'cert', '')
+          this.$uci.set('openvpn', this.instanceName, 'key', '')
+          if (instanceType === 'server') {
+            this.$uci.set('openvpn', this.instanceName, 'server_ip', '')
+            this.$uci.set('openvpn', this.instanceName, 'server_netmask', '')
+            this.$uci.set('openvpn', this.instanceName, 'dh', '')
           }
-        })
-    },
-    //Diffrent Upload methods--------------------------------------------------------------------
-    onUploadServerStatic(info) {
-      if (this.onUpload(info)) {
-        this.selectedInstance.secret = this.tempFileLocation
-        this.tempFileLocation = ''
+          break
+        case authType === 'tls':
+          this.$uci.set('openvpn', this.instanceName, 'local_ip', '')
+          this.$uci.set('openvpn', this.instanceName, 'remote_ip', '')
+          this.$uci.set('openvpn', this.instanceName, 'secret', '')
+          if (instanceType === 'server') {
+            this.$uci.set('openvpn', this.instanceName, 'network_ip', '')
+            this.$uci.set('openvpn', this.instanceName, 'network_mask', '')
+          }
+          break
       }
+      this.$uci.save().then(() => {
+        this.$uci.apply()
+      })
     },
-    onUploadCertAuth(info) {
+
+    onFileUpload(info, instanceOption) {
+      console.log(info)
       if (this.onUpload(info)) {
-        this.selectedInstance.ca = this.tempFileLocation
-        this.tempFileLocation = ''
-      }
-    },
-    onUploadCert(info) {
-      if (this.onUpload(info)) {
-        this.selectedInstance.cert = this.tempFileLocation
-        this.tempFileLocation = ''
-      }
-    },
-    onUploadKey(info) {
-      if (this.onUpload(info)) {
-        this.selectedInstance.key = this.tempFileLocation
-        this.tempFileLocation = ''
-      }
-    },
-    onUploadDH(info) {
-      if (this.onUpload(info)) {
-        this.selectedInstance.dh = this.tempFileLocation
+        this.$uci.set('openvpn', this.instanceName, instanceOption, this.tempFileLocation)
         this.tempFileLocation = ''
       }
     },
@@ -611,14 +246,21 @@ export default {
       })
     }
   },
+  watch: {
+    advancedCheck() {
+      this.setEncriptionOptions()
+    }
+  },
   created() {
     this.checkRouterLan()
   }
 }
 </script>
 <style>
-#components-form-demo-validate-other .dropbox {
-  height: 180px;
-  line-height: 1.5;
+.insinstance-modal-form > * > .ant-form-item-label,
+.insinstance-modal-form > div > * > .ant-form-item-label,
+.insinstance-modal-form > div > * > * > .ant-form-item-label {
+  width: 40%;
+  text-align: left;
 }
 </style>
