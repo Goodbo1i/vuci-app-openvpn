@@ -1,0 +1,66 @@
+diff --git a/vuci-ui-core/vue/src/components/VuciForm/src/VuciFormItemInput.vue b/vuci-ui-core/vue/src/components/VuciForm/src/VuciFormItemInput.vue
+index 7f7a54e..fcffbc0 100644
+--- a/vuci-ui-core/vue/src/components/VuciForm/src/VuciFormItemInput.vue
++++ b/vuci-ui-core/vue/src/components/VuciForm/src/VuciFormItemInput.vue
+@@ -1,6 +1,6 @@
+ <template>
+   <vuci-form-item-template v-bind="VuciFormItemTemplateProps">
+-    <component :is="is" v-model="model" :type="type" :placeholder="placeholder" :maxLength="maxLength" :prefix="prefixIcon" :suffix="suffixIcon"
++    <component :is="is" v-model="model" :type="type" :defaultValue="defaultValue" :placeholder="placeholder" :maxLength="maxLength" :prefix="prefixIcon" :suffix="suffixIcon"
+     :addon-before="prepend" :addon-after="append"/>
+   </vuci-form-item-template>
+ </template>
+@@ -16,6 +16,7 @@ export default {
+     maxLength: Number,
+     prepend: String,
+     append: String,
++    defaultValue: String,
+     type: {
+       validator (value) {
+         return ['text', 'url', 'email', 'date', 'number', 'tel'].indexOf(value) !== -1
+diff --git a/vuci-ui-core/vue/src/components/VuciForm/src/VuciFormItemMixin.vue b/vuci-ui-core/vue/src/components/VuciForm/src/VuciFormItemMixin.vue
+index 7866b2e..183df4f 100644
+--- a/vuci-ui-core/vue/src/components/VuciForm/src/VuciFormItemMixin.vue
++++ b/vuci-ui-core/vue/src/components/VuciForm/src/VuciFormItemMixin.vue
+@@ -331,6 +331,7 @@ export default {
+         })
+       } else {
+         let value = this.uciSection[this.name]
++        if (typeof value === 'undefined') value = this.defaultValue
+         if (typeof value === 'undefined') value = this.initial
+         this.buildFormPost(value)
+       }
+@@ -340,7 +341,9 @@ export default {
+     if (this.vuciForm.fields[this.name]) {
+       throw new Error(`Duplicate VuciFormItem name: ${this.name}`)
+     }
+-
++    if (this.defaultVaule) {
++      this.__save()
++    }
+     this.$set(this.vuciForm.fields, this.prop, this)
+ 
+     this.buildForm()
+diff --git a/vuci-ui-core/vue/src/components/VuciForm/src/VuciFormItemSelect.vue b/vuci-ui-core/vue/src/components/VuciForm/src/VuciFormItemSelect.vue
+index 66af4ef..5e6ae92 100644
+--- a/vuci-ui-core/vue/src/components/VuciForm/src/VuciFormItemSelect.vue
++++ b/vuci-ui-core/vue/src/components/VuciForm/src/VuciFormItemSelect.vue
+@@ -3,7 +3,7 @@
+     <a-select v-if="multiple || !allowCreate" v-model="model" :placeholder="placeholder" :mode="mode">
+       <a-select-option v-for="o in convertedOptions" :key="o[0]" :value="o[0]">{{ o[1] }}</a-select-option>
+     </a-select>
+-    <a-auto-complete v-else v-model="model" :placeholder="placeholder" :data-source="convertedDataSource" option-label-prop="value" allow-clear/>
++    <a-auto-complete v-else v-model="model" :placeholder="placeholder" :data-source="convertedDataSource" option-label-prop="value" :defaultValue="defaultValue" allow-clear/>
+   </vuci-form-item-template>
+ </template>
+ 
+@@ -17,7 +17,8 @@ export default {
+     options: Array,
+     placeholder: String,
+     multiple: Boolean,
+-    allowCreate: Boolean
++    allowCreate: Boolean,
++    defaultValue: String
+   },
+   computed: {
+     mode () {
