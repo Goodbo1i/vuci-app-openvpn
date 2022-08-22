@@ -104,14 +104,14 @@
           <div v-show="advancedCheck">
             <hr />
             <h2>Advanced</h2>
-            <vuci-form-item-input label="Keep alive" :uci-section="s" name="keepalive" />
-            <vuci-form-item-input label="Port" :uci-section="s" name="port" />
-            <vuci-form-item-checkbox label="Persist Key" :uci-section="s" name="persist_key" />
-            <vuci-form-item-checkbox label="Persist Tun" :uci-section="s" name="tun" />
-            <vuci-form-item-select label="Protocol" :uci-section="s" name="proto" :options="proto" />
+            <vuci-form-item-input label="Keep alive" :uci-section="s" name="keepalive" :defaultValue="'10 120'" />
+            <vuci-form-item-input label="Port" :uci-section="s" name="port" :defaultValue="'1194'" />
+            <vuci-form-item-checkbox label="Persist Key" :uci-section="s" name="persist_key" :defaultValue="'1'" />
+            <vuci-form-item-checkbox label="Persist Tun" :uci-section="s" name="tun" :defaultValue="'1'" />
+            <vuci-form-item-select label="Protocol" :uci-section="s" name="proto" :options="proto" :defaultValue="'udp'" />
+            <vuci-form-item-select label="Cipher" :uci-section="s" name="cipher" :options="encryption" :defaultValue="'BF-CBC'" />
             <vuci-form-item-list label="Data ciphers" :uci-section="s" name="data_ciphers" />
-            <vuci-form-item-select label="Scipher" :uci-section="s" name="cipher" :options="encryption" />
-            <div v-if="s.type === 'server'">
+            <div v-show="s.type === 'server'">
               <vuci-form-item-list label="Push Option" :uci-section="s" name="push" />
             </div>
           </div>
@@ -146,8 +146,7 @@ export default {
         ['tcp6', 'TCP6']
       ],
       encryption: [
-        ['skey', 'Static'],
-        ['tls', 'TLS']
+        'BF-CBC',
       ],
       instance: {
         network_ip: ''
@@ -156,6 +155,17 @@ export default {
     }
   },
   methods: {
+    saveTest(self) {
+      console.log(self)
+      this.$uci.set('openvpn', this.instanceName, self.name, self.model)
+      this.$uci.save().then(() => {
+        this.$uci.apply()
+      })
+    },
+    loadTest(self) {
+      const [v] = (this.$uci.get('openvpn', this.instanceName, self.name) || '').split('+')
+      return v
+    },
     handleOk() {
       // If Edited function updates the values
       if (this.instance.network_ip === this.router_lan) return this.$message.error('Please provide diffrent network IP')
@@ -176,8 +186,6 @@ export default {
       this.$uci.load('openvpn')
       const authType = this.$uci.get('openvpn', this.instanceName, '_auth')
       const instanceType = this.$uci.get('openvpn', this.instanceName, 'type')
-      console.log(authType)
-
       this.$rpc.call('openvpnlua', 'deleteFiles', {
         auth: authType,
         name: this.instanceName

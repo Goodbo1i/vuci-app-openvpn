@@ -28,7 +28,7 @@
         <a-input v-model="newInstanceName" @change="checkInstnaceName()" required placeholder="Input new instance name" :maxLength="15" />
       </a-form-item>
       <a-form-item label="Role" required>
-        <a-select v-model="newInstanceRole" placeholder="Select Role" style="width: 120px" required>
+        <a-select v-model="newInstanceRole" style="width: 120px" required>
           <a-select-option value="client"> Client </a-select-option>
           <a-select-option value="server"> Server </a-select-option>
         </a-select>
@@ -38,7 +38,7 @@
       </a-form-item>
     </a-form>
 
-    <configuration :visible="editModal" @closeModal="editModal = false" :instanceName="selectedInstanceName" />
+    <configuration :visible="editModal" @closeModal="editModal = false" @reaload="reaload()" :instanceName="selectedInstanceName" />
   </div>
 </template>
 
@@ -88,7 +88,7 @@ export default {
     return {
       columns,
       editModal: false,
-      newInstanceRole: '',
+      newInstanceRole: 'client',
       newInstanceName: '',
       allInstances: [],
       selectedInstanceName: '',
@@ -123,24 +123,22 @@ export default {
 
       this.editModal = true
     },
+    reaload() {
+      this.editModal = !this.editModal
+      this.editModal = !this.editModal
+    },
 
     addInstance() {
       if (this.newInstanceName.length > 15) return this.$message.error('Instance name is too long!')
       if (this.newInstanceRole === 'server' && !this.serverInAFrom) return this.$message.error('Server is already created')
       const sid = this.$uci.add('openvpn', 'openvpn', this.newInstanceName)
 
-      this.$uci.set('openvpn', sid, 'keepalive', '10 120')
       this.$uci.set('openvpn', sid, '_name', this.newInstanceName)
-      this.$uci.set('openvpn', sid, 'data_ciphers', ['BF-CBC'])
-      this.$uci.set('openvpn', sid, 'persist_key', 1)
-      this.$uci.set('openvpn', sid, 'port', 1194)
-      this.$uci.set('openvpn', sid, 'tun', 1)
       this.$uci.set('openvpn', sid, 'verb', 5)
       this.$uci.set('openvpn', sid, 'type', this.newInstanceRole)
-      this.$uci.set('openvpn', sid, 'proto', 'udp')
-      this.$uci.set('openvpn', sid, 'cipher', 'BF-CBC')
       this.$uci.set('openvpn', sid, '_auth', 'skey')
       this.$uci.set('openvpn', sid, 'enable', 0)
+			this.$uci.set('openvpn', sid, 'data_ciphers', ['BF-CBC','DA-DA'])
 
       if (this.newInstanceRole === 'client') {
         this.$uci.set('openvpn', sid, 'resolv_retry', 'infinite')
